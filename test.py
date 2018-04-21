@@ -47,6 +47,7 @@ class HackeroneClient:
         return Report(self._query_graphql(graphql_query)['data']['report'])
 
     def reports(self, first = 10, filters = [], columns = []):
+        # TODO: Deal with multiple filters
         graphql_where = filters.to_graphql()
 
         graphql_query = '''

@@ -2,6 +2,27 @@ import unittest
 
 import urllib2, urllib, json
 
+class EqualExpression:
+    def __init__(self, field, value):
+       self.field = field
+       self.value = value
+
+    def to_graphql(self):
+       return '%(field_name)s: { equals: "%(value)s" }' % {
+           'field_name': self.field.to_graphql(),
+           'value': self.value
+       }
+
+class Field:
+    def __init__(self, name):
+       self.name = name
+
+    def to_graphql(self):
+        return self.name
+
+    def __eq__(self, value):
+        return EqualExpression(self, value)
+
 class Report:
     def __init__(self, attributes):
         self.attributes = attributes
@@ -9,6 +30,8 @@ class Report:
     @property
     def id(self):
       return self.attributes['id']
+
+    team_id = Field('team_id')
 
 class HackeroneClient:
     def report(self, id, columns=[]):
@@ -23,10 +46,12 @@ class HackeroneClient:
 
         return Report(self._query_graphql(graphql_query)['data']['report'])
 
-    def reports(self, first = 10, where = None, columns = []):
+    def reports(self, first = 10, filters = [], columns = []):
+        graphql_where = filters.to_graphql()
+
         graphql_query = '''
           query {
-            reports(first: %(first)s, filter: %(filter)s) {
+            reports(first: %(first)s, filter: { %(filter)s }) {
               edges {
                 node {
                   id
@@ -35,7 +60,11 @@ class HackeroneClient:
               }
             }
           }
-        ''' % { 'filter': where, 'first': first, 'report_fragment': self._report_fragment(columns) }
+        ''' % {
+            'filter': graphql_where,
+            'first': first,
+            'report_fragment': self._report_fragment(columns)
+        }
 
         nodes = self._query_graphql(graphql_query)['data']['reports']['edges']
         return [Report(n['node']) for n in nodes]
@@ -53,8 +82,15 @@ class HackeroneClient:
 
 class TestHackeroneClient(unittest.TestCase):
     def test_getting_reports_by_team_id(self):
-        reports = HackeroneClient().reports(where = '{ team_id: { equals: "13" } }', columns = ['team { id }'])
-        self.assertEqual(reports[0].attributes['team']['id'], 'Z2lkOi8vaGFja2Vyb25lL1RlYW0vMTM=')
+        reports = HackeroneClient().reports(
+            filters = Report.team_id == 13,
+            columns = ['team { id }']
+        )
+
+        self.assertEqual(
+            reports[0].attributes['team']['id'],
+            'Z2lkOi8vaGFja2Vyb25lL1RlYW0vMTM='
+        )
 
     def test_getting_a_report_by_id(self):
         report = HackeroneClient().report(329798, ['_id'])

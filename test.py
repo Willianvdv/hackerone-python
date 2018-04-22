@@ -13,6 +13,13 @@ class EqualExpression:
            'value': self.value
        }
 
+class FakeGraphqlable:
+    def __init__(self, graphql):
+        self.graphql = graphql
+
+    def to_graphql(self):
+         return self.graphql
+
 class Field:
     def __init__(self, name):
        self.name = name
@@ -23,6 +30,17 @@ class Field:
     def __eq__(self, value):
         return EqualExpression(self, value)
 
+    def __call__(self, *children):
+        return FakeGraphqlable(
+            '%(field_name)s { %(children)s }' % {
+                'field_name': self.to_graphql(),
+                'children': ' '.join([child.to_graphql() for child in children])
+            }
+        )
+
+class Team:
+    id = Field('id')
+
 class Report:
     def __init__(self, attributes):
         self.attributes = attributes
@@ -31,7 +49,9 @@ class Report:
     def id(self):
       return self.attributes['id']
 
+    id = Field('id')
     team_id = Field('team_id')
+    team = Field('team')
 
 class HackeroneClient:
     def report(self, id, columns=[]):
@@ -42,7 +62,10 @@ class HackeroneClient:
               %(report_fragment)s
             }
           }
-        ''' % { 'id': id, 'report_fragment':self._report_fragment(columns) }
+        ''' % {
+            'id': id,
+            'report_fragment': self._report_fragment(columns)
+        }
 
         return Report(self._query_graphql(graphql_query)['data']['report'])
 
@@ -71,7 +94,8 @@ class HackeroneClient:
         return [Report(n['node']) for n in nodes]
 
     def _report_fragment(self, columns):
-        return '... on Report { %s }' % ' '.join(columns)
+        return '... on Report { %s }' % \
+            ' '.join([column.to_graphql() for column in columns])
 
     def _query_graphql(self, graphql_query):
         response = urllib2.urlopen(
@@ -85,7 +109,7 @@ class TestHackeroneClient(unittest.TestCase):
     def test_getting_reports_by_team_id(self):
         reports = HackeroneClient().reports(
             filters = Report.team_id == 13,
-            columns = ['team { id }']
+            columns = [Report.team(Team.id)]
         )
 
         self.assertEqual(
@@ -94,7 +118,7 @@ class TestHackeroneClient(unittest.TestCase):
         )
 
     def test_getting_a_report_by_id(self):
-        report = HackeroneClient().report(329798, ['_id'])
+        report = HackeroneClient().report(329798, columns = [Report.id])
         self.assertEqual(report.id, 'Z2lkOi8vaGFja2Vyb25lL1JlcG9ydC8zMjk3OTg=')
 
 if __name__ == '__main__':
